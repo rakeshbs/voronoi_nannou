@@ -1,6 +1,7 @@
 use bytemuck;
 use nannou::{
     prelude::*,
+    rand::random_range,
     wgpu::{RenderPipelineDescriptor, ShaderModuleDescriptor},
 };
 
@@ -8,7 +9,7 @@ use nannou::{
 //
 //
 
-const NUM_POINTS: usize = 1000;
+const NUM_SITES: usize = 1024;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -22,6 +23,8 @@ struct Model {
     pipeline: wgpu::RenderPipeline,
     site_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
+    base_sites: Vec<[f32; 2]>, // store static base positions
+    amplitudes: Vec<f32>,
 }
 
 fn model(_app: &App) -> Model {
@@ -30,13 +33,20 @@ fn model(_app: &App) -> Model {
     let device = window.device();
     let queue = window.queue();
 
+    let mut base_sites = vec![];
     let mut sites = [Site {
         position: [0.0, 0.0],
         _pad: [0.0, 0.0],
-    }; 64];
+    }; NUM_SITES];
+    let mut amplitudes = vec![0.0; NUM_SITES];
 
     for site in &mut sites {
-        site.position = [random(), random()];
+        let x = random();
+        let y = random();
+        site.position = [x, y];
+        base_sites.push([x, y]);
+
+        amplitudes.push(random_range(0.01, 0.05));
     }
 
     let voronoi_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -47,7 +57,7 @@ fn model(_app: &App) -> Model {
     let site_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Site Buffer"),
         contents: bytemuck::cast_slice(&sites),
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
     });
 
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -56,7 +66,7 @@ fn model(_app: &App) -> Model {
             binding: 0,
             visibility: wgpu::ShaderStages::FRAGMENT,
             ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
                 has_dynamic_offset: false,
                 min_binding_size: None,
             },
@@ -75,7 +85,7 @@ fn model(_app: &App) -> Model {
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),
-        bind_group_layouts: &[],
+        bind_group_layouts: &[&bind_group_layout],
         push_constant_ranges: &[],
     });
 
@@ -107,7 +117,7 @@ fn model(_app: &App) -> Model {
         },
         depth_stencil: None,
         multisample: wgpu::MultisampleState {
-            count: 1,
+            count: 4,
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
@@ -119,10 +129,40 @@ fn model(_app: &App) -> Model {
         pipeline,
         site_buffer,
         bind_group,
+        base_sites,
+        amplitudes,
     }
 }
 
-fn update(_app: &App, _model: &mut Model, _update: Update) {}
+fn update(app: &App, model: &mut Model, _update: Update) {
+    let time = app.time;
+
+    let mut animated_sites = [Site {
+        position: [0.0, 0.0],
+        _pad: [0.0, 0.0],
+    }; NUM_SITES];
+
+    for (i, base) in model.base_sites.iter().enumerate() {
+        let angle = time + i as f32 * 0.3; // unique phase for each
+        let radius = model.amplitudes[i] * time.sin() * 0.5 + 0.1;
+
+        let x = base[0] + angle.sin() * radius;
+        let y = base[1] + angle.cos() * radius;
+
+        // Keep within [0,1]
+        let x = x.clamp(0.0, 1.0);
+        let y = y.clamp(0.0, 1.0);
+
+        animated_sites[i] = Site {
+            position: [x, y],
+            _pad: [0.0, 0.0],
+        };
+    }
+    // Write to GPU
+    let binding = app.main_window();
+    let queue = binding.queue();
+    queue.write_buffer(&model.site_buffer, 0, bytemuck::cast_slice(&animated_sites));
+}
 
 fn view(_app: &App, _model: &Model, _frame: Frame) {
     let device = _frame.device_queue_pair().device();
@@ -148,6 +188,8 @@ fn view(_app: &App, _model: &Model, _frame: Frame) {
     render_pass.set_pipeline(&_model.pipeline);
     render_pass.set_bind_group(0, &_model.bind_group, &[]);
     render_pass.draw(0..3, 0..1);
+    drop(render_pass);
+    queue.submit(Some(encoder.finish()));
 }
 
 fn main() {
