@@ -71,7 +71,7 @@ fn fs_main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
     var minDist = 10000.0;
     var nearestIndex = 0u;
 
-    for (var i = 0u; i < 64u; i = i + 1u) {
+    for (var i = 0u; i < 1024u; i = i + 1u) {
         let dist = distance(uv, sites[i].pos);
         if dist < minDist {
             minDist = dist;

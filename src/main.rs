@@ -143,7 +143,7 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     }; NUM_SITES];
 
     for (i, base) in model.base_sites.iter().enumerate() {
-        let angle = time + i as f32 * 0.3; // unique phase for each
+        let angle = time + i as f32 * 0.03; // unique phase for each
         let radius = model.amplitudes[i] * time.sin() * 0.5 + 0.1;
 
         let x = base[0] + angle.sin() * radius;
