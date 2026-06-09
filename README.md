@@ -2,6 +2,8 @@
 
 GPU-accelerated animated Voronoi diagram in Rust with [Nannou](https://nannou.cc/).
 
+<video src="voronoi.mp4" width="600" loop muted playsinline></video>
+
 ## Run
 
 ```bash
